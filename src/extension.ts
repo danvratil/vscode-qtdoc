@@ -29,6 +29,7 @@ type Result = {
 
 async function resolveSymbolDocs(symbol: string): Promise<Result | undefined>
 {
+	let now = performance.now();
 	console.log("Loading SQLite wasm");
 	const sqlite = await (async () => {
 		try {
@@ -38,14 +39,15 @@ async function resolveSymbolDocs(symbol: string): Promise<Result | undefined>
 			throw e;
 		}
 	})();
+	console.log(`SQlite wasm loaded in ${performance.now() - now} ms`);
 
-	console.log("SQlite wasm loaded");
-
+	now = performance.now();
 	const data = await vscode.workspace.fs.readFile(vscode.Uri.file('/usr/share/doc/qt6/qtcore.qch'));
-	console.log("QCH file loaded");
+	console.log(`QCH file loaded in ${performance.now() - now} ms`);
 	const db = new sqlite.Database(data);
 	console.log("DB initialized");
 
+	now = performance.now();
 	let stmt = db.prepare("SELECT FolderTable.Name, FileNameTable.Name, IndexTable.Anchor " +
 						  "FROM IndexTable " +
 						  "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
@@ -61,6 +63,7 @@ async function resolveSymbolDocs(symbol: string): Promise<Result | undefined>
 
 	db.close();
 
+	console.log(`Query finished in ${performance.now() - now} ms`);
 	return { path: `${row[0]}/${row[1]}`, anchor: row[2] };
 }
 
@@ -90,18 +93,20 @@ export function activate(context: vscode.ExtensionContext) {
 			console.log(`Source line: ${sourceLine}`);
 
 			const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>("vscode.executeDocumentSymbolProvider", doc.uri);
+			let start = performance.now();
 			const fqSymbol = resolveFQSymbol(symbols, rangeText);
-			console.log(`FQ symbol: ${fqSymbol}`);
+			console.log(`FQ symbol: ${fqSymbol}, took ${performance.now() - start} ms`);
 			if (!fqSymbol) {
 				return { contents: [] };
 			}
 
+			start = performance.now();
 			const result = await resolveSymbolDocs(fqSymbol);
 			if (!result) {
 				console.error("Failed to resolve FQ symbol in DB");
 				return { contents: [] };
 			}
-			console.log(`FQ symbol docs path: ${result.path}, anchor: ${result.anchor}`);
+			console.log(`FQ symbol docs path: ${result.path}, anchor: ${result.anchor}, took ${performance.now() - start} ms`);
 
 			const html = await (async () => {
 				try {
@@ -141,11 +146,8 @@ export function activate(context: vscode.ExtensionContext) {
 				docu += para.outerHTML;
 				para = para.nextElementSibling;
 			}
-			console.log(`DOC: ${docu}`);
 
 			const md = NodeHtmlMarkdown.translate(docu, {});
-
-			console.log(md);
 
 			return {
 				contents: [md]
