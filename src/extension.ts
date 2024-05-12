@@ -3,45 +3,85 @@
 import * as vscode from 'vscode';
 import { parse } from 'node-html-parser';
 import { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } from 'node-html-markdown';
+import { LRUCache } from 'lru-cache';
 
-const initSqlJs = require('sql.js');
+import initSqlJs from 'sql.js';
 
-function resolveFQSymbol(symbols: vscode.DocumentSymbol[], symbol: string): string | undefined
+type QCHInfo = {
+	path: string;
+	anchor: string | undefined;
+}
+
+class QCHDatabase {
+	constructor() {
+	}
+
+	async scanQCHFiles(): Promise<void>
+	{
+		const paths = vscode.workspace.getConfiguration('qch').get<string[]>('paths') || defaultQCHPaths();
+		for (const path of paths) {
+			const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(path))
+	}
+
+	async findQCHSymbol(symbol: string): Promise<QCHInfo | undefined>
+	{
+		return undefined;
+	}
+
+	private async loadQCHFile(path: string): Promise<Uint8Array | undefined>
+	{
+		let data = this.lru.get(path);
+		if (!data) {
+			data = await vscode.workspace.fs.readFile(vscode.Uri.file(path));
+			this.lru.set(path, data, { size: data.byteLength });
+		}
+
+		return data;
+	}
+
+	private lru = new LRUCache<string, Uint8Array>({
+		maxSize: 40 * 1024, 		/* 40 MB */
+		maxEntrySize: 15 * 1024 	/* 15 MB */
+	});
+}
+
+const getSqlite = Object.assign(
+	async (context: vscode.ExtensionContext): Promise<initSqlJs.SqlJsStatic> => {
+		if (typeof getSqlite.sqlite === 'undefined') {
+			getSqlite.sqlite = await initSqlJs();
+		}
+		return getSqlite.sqlite;
+	},
+	{ sqlite: undefined as initSqlJs.SqlJsStatic | undefined }
+);
+
+type Symbol = {
+	name: string,
+	type: vscode.SymbolKind,
+};
+
+function resolveFQSymbol(symbols: vscode.DocumentSymbol[], symbol: string): Symbol | undefined
 {
 	for (const s of symbols) {
 		if (s.name === symbol) {
-			return s.name;
+			return { name: s.name, type: s.kind };
 		}
 
 		const subSymbol = resolveFQSymbol(s.children, symbol);
 		if (subSymbol) {
-			return s.name + "::" + subSymbol;
+			// We use the type of the leaf symbol
+			return { name: s.name + "::" + subSymbol.name, type: subSymbol.type };
 		}
 	}
 
 	return undefined;
 }
 
-type Result = {
-	path: string;
-	anchor: string;
-};
-
-async function resolveSymbolDocs(symbol: string): Promise<Result | undefined>
+async function resolveSymbolDocs(context: vscode.ExtensionContext, symbol: string): Promise<Result | undefined>
 {
-	let now = performance.now();
-	console.log("Loading SQLite wasm");
-	const sqlite = await (async () => {
-		try {
-			return await initSqlJs();
-		} catch (e) {
-			console.error("Failed to load SQLite wasm: " + e);
-			throw e;
-		}
-	})();
-	console.log(`SQlite wasm loaded in ${performance.now() - now} ms`);
+	const sqlite = await getSqlite(context);
 
-	now = performance.now();
+	let now = performance.now();
 	const data = await vscode.workspace.fs.readFile(vscode.Uri.file('/usr/share/doc/qt6/qtcore.qch'));
 	console.log(`QCH file loaded in ${performance.now() - now} ms`);
 	const db = new sqlite.Database(data);
@@ -64,7 +104,7 @@ async function resolveSymbolDocs(symbol: string): Promise<Result | undefined>
 	db.close();
 
 	console.log(`Query finished in ${performance.now() - now} ms`);
-	return { path: `${row[0]}/${row[1]}`, anchor: row[2] };
+	return { path: `${row[0]}/${row[1]}`, anchor: row[2]?.toString() };
 }
 
 
@@ -101,7 +141,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			start = performance.now();
-			const result = await resolveSymbolDocs(fqSymbol);
+			const result = await resolveSymbolDocs(context, fqSymbol);
 			if (!result) {
 				console.error("Failed to resolve FQ symbol in DB");
 				return { contents: [] };
