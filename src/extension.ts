@@ -4,46 +4,9 @@ import * as vscode from 'vscode';
 import { parse } from 'node-html-parser';
 import { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } from 'node-html-markdown';
 import { LRUCache } from 'lru-cache';
+import { Worker } from 'worker_threads';
 
 import initSqlJs from 'sql.js';
-
-type QCHInfo = {
-	path: string;
-	anchor: string | undefined;
-}
-
-class QCHDatabase {
-	constructor() {
-	}
-
-	async scanQCHFiles(): Promise<void>
-	{
-		const paths = vscode.workspace.getConfiguration('qch').get<string[]>('paths') || defaultQCHPaths();
-		for (const path of paths) {
-			const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(path))
-	}
-
-	async findQCHSymbol(symbol: string): Promise<QCHInfo | undefined>
-	{
-		return undefined;
-	}
-
-	private async loadQCHFile(path: string): Promise<Uint8Array | undefined>
-	{
-		let data = this.lru.get(path);
-		if (!data) {
-			data = await vscode.workspace.fs.readFile(vscode.Uri.file(path));
-			this.lru.set(path, data, { size: data.byteLength });
-		}
-
-		return data;
-	}
-
-	private lru = new LRUCache<string, Uint8Array>({
-		maxSize: 40 * 1024, 		/* 40 MB */
-		maxEntrySize: 15 * 1024 	/* 15 MB */
-	});
-}
 
 const getSqlite = Object.assign(
 	async (context: vscode.ExtensionContext): Promise<initSqlJs.SqlJsStatic> => {
@@ -77,6 +40,11 @@ function resolveFQSymbol(symbols: vscode.DocumentSymbol[], symbol: string): Symb
 	return undefined;
 }
 
+type Result = {
+	path: string,
+	anchor: string | undefined
+};
+
 async function resolveSymbolDocs(context: vscode.ExtensionContext, symbol: string): Promise<Result | undefined>
 {
 	const sqlite = await getSqlite(context);
@@ -107,9 +75,44 @@ async function resolveSymbolDocs(context: vscode.ExtensionContext, symbol: strin
 	return { path: `${row[0]}/${row[1]}`, anchor: row[2]?.toString() };
 }
 
+function runIndexer() {
+	return new Promise((resolve, reject) => {
+		console.log("STARTING WORKER");
+		const worker = new Worker(new URL("./indexer.ts", import.meta.url));
+		worker.on("message", (message) => {
+			console.log("Worker message: ", message);
+			resolve(true);
+		});
+		worker.on("error", (code) => {
+			console.error(`Worker error: ${code}`);
+			reject(code);
+		});
+		worker.on("exit", (code) => {
+			if (code !== 0) {
+				reject(new Error(`Worker stopped with exit code ${code}`));
+			}
+		});
+
+		worker.postMessage({ command: "start" });
+	});
+}
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log("QCH extension activating");
+
+	let indexerDisposable = vscode.commands.registerCommand('extensions.useWorker', async () => {
+		try {
+			const result = await runIndexer();
+			vscode.window.showInformationMessage(`Indexer finished with result: ${result}`);
+		} catch (error) {
+			vscode.window.showErrorMessage(`Indexer failed with error: ${error}`);
+		}
+	});
+
+
+	context.subscriptions.push(indexerDisposable);
+
+	vscode.commands.executeCommand('extensions.useWorker');
 
 	vscode.languages.registerHoverProvider('cpp', {
 		async provideHover(document, position, cancellationToken): Promise<vscode.Hover> {
@@ -141,7 +144,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			start = performance.now();
-			const result = await resolveSymbolDocs(context, fqSymbol);
+			const result = await resolveSymbolDocs(context, fqSymbol.name);
 			if (!result) {
 				console.error("Failed to resolve FQ symbol in DB");
 				return { contents: [] };

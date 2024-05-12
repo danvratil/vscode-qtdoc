@@ -64,5 +64,5 @@ export class QCHDatabase {
 		maxEntrySize: 15 * 1024 	/* 15 MB */
 	});
 
-    private _qchFiles: string[];
+    private _qchFiles: string[] = [];
 }
