@@ -3,8 +3,10 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import initSqlJs from 'sql.js';
-import { createInflate } from 'zlib';
-import { parse as html_parse } from 'node-html-parser';
+import { inflate } from 'zlib';
+import { parse as parse_html } from 'node-html-parser';
+import { Sha256 } from '@aws-crypto/sha256-js';
+import { promisify } from 'util';
 
 const string_hash = require('string-hash-64');
 
@@ -118,12 +120,45 @@ async function checkIndex()
 
 async function sha256(data: string): Promise<string>
 {
-    const digest = await crypto.subtle.digest('SHA-256', (new TextEncoder).encode(data));
+    const sha256 = new Sha256();
+    sha256.update(data);
+    const digest = await sha256.digest();
     const hashArray = Array.from(new Uint8Array(digest));
     return hashArray.map(b => ('00' + b.toString(16)).slice(-2)).join('');
 }
 
-async function extractFile(db: initSqlJs.Database, qchFileName: string, qchFileId: number, fileName: string): string
+function ntohl(data: Uint8Array): number
+{
+    return ((0xff & data[0]) << 24) |
+        ((0xff & data[1]) << 16) |
+        ((0xff & data[2]) << 8) |
+        ((0xff & data[3]));
+}
+
+/**
+ * Our own implementation of the qUncompress function from Qt.
+ *
+ * qCompress() uses zlib to deflate the data, but it also adds a 4-byte big-endian
+ * header containing the size of the original (uncompressed) data.
+ *
+ * @param data Compressed data produced by qCompress() function from Qt
+ * @returns Decompressed data
+ */
+async function qUncompress(data: Uint8Array): Promise<Uint8Array | undefined>
+{
+    const expected_size = ntohl(data.slice(0, 4));
+    const zlib_data = data.slice(4);
+
+    const do_inflate = promisify(inflate);
+    const buffer = await do_inflate(zlib_data);
+    if (buffer.byteLength !== expected_size) {
+        throw new Error(`Decompressed data size (${buffer.byteLength}) does not match the expected size (${expected_size})`);
+    }
+
+    return new Uint8Array(buffer);
+}
+
+async function extractFile(db: initSqlJs.Database, qchFileName: string, qchFileId: number, fileName: string): Promise<string>
 {
     const result = db.exec("SELECT Data FROM FileDataTable WHERE FileId = :fileId", { ':fileId': qchFileId });
     const data = result[0].values[0][0] as Uint8Array | undefined;
@@ -131,24 +166,9 @@ async function extractFile(db: initSqlJs.Database, qchFileName: string, qchFileI
         throw new Error("Failed to extract file data");
     }
 
-    // Qt specifics of data produced by qCompres(): first 4 bytes are the size of the uncompressed data
-    // followed by actual zlib-compressed data.
-    const expected_size = new Uint32Array(data.buffer.slice(0, 4))[0];
-
-    const zlib_data = data.slice(4);
-
-    const inflater = createInflate();
-    inflater.write(zlib_data);
-
-    let buffer = Buffer.alloc(expected_size);
-    while (true) {
-        const read = inflater.read();
-        if (read === null) {
-            break;
-        }
-        if (buffer.write(read) !== read.length) {
-            throw new Error("Failed to write decompressed data: declared size too small!");
-        }
+    const buffer = await qUncompress(data);
+    if (!buffer) {
+        throw new Error("Failed to decompress file data");
     }
 
     const targetDir = path.join(getCacheDirectory(), await sha256(qchFileName));
@@ -170,32 +190,41 @@ function generateSymbolId(symbol: string): SymbolId
     return string_hash(symbol);
 }
 
-async function extractAnchor(filePath: string, identifier: string): Promise<Anchor>
+async function extractAnchor(filePath: string, anchor: string): Promise<Anchor>
 {
     const data = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
-    const root = (() => { try {
-				return parse(html.toString());
-			} catch (e) {
-				console.error("Failed to parse HTML doc");
-				return undefined;
-			} })();
-			console.log("Parsed HTML file");
+    const root = (() => {
+        try {
+            return parse_html(data.toString());
+        } catch (e) {
+            console.error("Failed to parse HTML doc");
+            return undefined;
+        }
+    })();
 
-			if (!root) {
-				return { contents: [] };
-			}
-			const elem = root.querySelector(`h3#${result.anchor}`);
-			if (!elem) {
-				console.error("Failed to find anchor in HTML doc");
-				return { contents: [] };
-			}
-			console.log("Found anchor in HTML doc");
+    console.log("Parsed HTML file");
+
+    if (!root) {
+        throw new Error("Failed to parse HTML doc");
+    }
+
+    const doc_header_elem = root.querySelector(`h3#${anchor}`);
+    if (!doc_header_elem) {
+        throw new Error("Failed to find anchor in HTML doc");
+    }
+
+    let doc_node = doc_header_elem.nextElementSibling;
+    let end = doc_node?.range[1] || 0;
+    while (doc_node && doc_node.tagName !== 'H3') {
+        doc_node = doc_node.nextElementSibling;
+        end = doc_node?.range[1] || 0;
+    }
 
     return {
-        name: "",
-        offset: 0,
-        len: 0
-    }
+        name: anchor,
+        offset: doc_header_elem.range[0],
+        len: Math.max(0, end - doc_header_elem.range[0])
+    };
 }
 
 async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, symbolMap: Map<SymbolId, SymbolData>, fileMap: Map<FileId, string>)
@@ -228,14 +257,14 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
 
         symbolMap.set(generateSymbolId(identifier), {
             fileId: fileId,
-            anchor: await extractAnchor(fileMap[fileId], anchor)
+            anchor: await extractAnchor(fileMap.get(fileId)!, anchor)
         });
     }
 }
 
 async function reindex()
 {
-    const sqlte = await initSqlJs();
+    const sqlite = await initSqlJs();
 
     // Find all files to index
     const scanDirs = ["/usr/share/doc/qt6"];
@@ -262,10 +291,19 @@ type Message = {
     command: 'checkIndex' | 'reindex';
 };
 
-parentPort!.addListener('message', async (message: Message) => {
-    if (message.command === 'checkIndex') {
-        checkIndex();
-    } else if (message.command === 'reindex') {
-        reindex();
-    }
-});
+if (parentPort) { // not available when running tests
+    parentPort!.addListener('message', async (message: Message) => {
+        if (message.command === 'checkIndex') {
+            checkIndex();
+        } else if (message.command === 'reindex') {
+            reindex();
+        }
+    });
+}
+
+export const exportedForTesting = {
+    extractFile,
+    extractAnchor,
+    ntohl,
+    qUncompress,
+};
