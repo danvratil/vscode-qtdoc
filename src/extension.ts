@@ -1,22 +1,9 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { parse } from 'node-html-parser';
 import { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } from 'node-html-markdown';
-import { LRUCache } from 'lru-cache';
 import { Worker } from 'worker_threads';
-
-import initSqlJs from 'sql.js';
-
-const getSqlite = Object.assign(
-	async (context: vscode.ExtensionContext): Promise<initSqlJs.SqlJsStatic> => {
-		if (typeof getSqlite.sqlite === 'undefined') {
-			getSqlite.sqlite = await initSqlJs();
-		}
-		return getSqlite.sqlite;
-	},
-	{ sqlite: undefined as initSqlJs.SqlJsStatic | undefined }
-);
+import { Response } from './worker.js';
 
 type Symbol = {
 	name: string,
@@ -45,56 +32,54 @@ type Result = {
 	anchor: string | undefined
 };
 
-async function resolveSymbolDocs(context: vscode.ExtensionContext, symbol: string): Promise<Result | undefined>
+function defaultQCHPaths(): string[]
 {
-	const sqlite = await getSqlite(context);
+    if (process.platform === 'linux') {
+        return [
+            '/usr/share/doc/qt5',
+            '/usr/share/doc/qt6'
+        ];
+    } else if (process.platform === 'win32') {
+        // TODO: How can we find or detect some reasonable defaults on Windows?
+    } else if (process.platform === 'darwin') {
+        // TODO: How can we find or detect some reasonalbe defaults on macOS?
+    }
 
-	let now = performance.now();
-	const data = await vscode.workspace.fs.readFile(vscode.Uri.file('/usr/share/doc/qt6/qtcore.qch'));
-	console.log(`QCH file loaded in ${performance.now() - now} ms`);
-	const db = new sqlite.Database(data);
-	console.log("DB initialized");
-
-	now = performance.now();
-	let stmt = db.prepare("SELECT FolderTable.Name, FileNameTable.Name, IndexTable.Anchor " +
-						  "FROM IndexTable " +
-						  "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
-						  "LEFT JOIN FolderTable ON (FileNameTable.FolderId = FolderTable.Id) " +
-						  "WHERE IndexTable.Identifier = :identifier");
-	stmt.bind([symbol]);
-	if (!stmt.step()) {
-		return undefined;
-	}
-
-	const row = stmt.get();
-	stmt.free();
-
-	db.close();
-
-	console.log(`Query finished in ${performance.now() - now} ms`);
-	return { path: `${row[0]}/${row[1]}`, anchor: row[2]?.toString() };
+    return [];
 }
 
-function runIndexer() {
-	return new Promise((resolve, reject) => {
-		console.log("STARTING WORKER");
-		const worker = new Worker(new URL("./indexer.ts", import.meta.url));
-		worker.on("message", (message) => {
-			console.log("Worker message: ", message);
-			resolve(true);
-		});
-		worker.on("error", (code) => {
-			console.error(`Worker error: ${code}`);
-			reject(code);
-		});
-		worker.on("exit", (code) => {
-			if (code !== 0) {
-				reject(new Error(`Worker stopped with exit code ${code}`));
+function getQCHDirectories(): string[] {
+	return vscode.workspace.getConfiguration('qch').get<string[]>('paths') || defaultQCHPaths();
+}
+
+async function runIndexer(context: vscode.ExtensionContext) {
+	return vscode.window.withProgress({
+		location: vscode.ProgressLocation.Notification,
+		cancellable: true,
+		title: "Validating QCH files index..."
+	}, (progress, token) => new Promise((resolve, reject) => {
+		const worker = new Worker(new URL(vscode.Uri.joinPath(context.extensionUri, '/dist/worker.js').toString(true)));
+		let donePercent = 0;
+		worker.on("message", (message: Response) => {
+			if (message.type === 'progress') {
+				const newProgressPercent = (message.progress.done / message.progress.total) * 100;
+				progress.report({ increment: newProgressPercent - donePercent });
+				donePercent = newProgressPercent;
+			} else if (message.type === 'checkIndexDone') {
+				resolve(true);
+				// TADAAAAAAA
+				//console.info(`Files to reindex: ${message.filesToReindex}`)
+			} else if (message.type === 'error') {
+				reject(new Error(message.error));
 			}
 		});
+		worker.on("error", (code) => {
+			console.error(`Worker error: ${code.message}`);
+			reject(code);
+		});
 
-		worker.postMessage({ command: "start" });
-	});
+		worker.postMessage({ type: "checkIndex", qchDirectories: getQCHDirectories() });
+	}));
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -102,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let indexerDisposable = vscode.commands.registerCommand('extensions.useWorker', async () => {
 		try {
-			const result = await runIndexer();
+			const result = await runIndexer(context);
 			vscode.window.showInformationMessage(`Indexer finished with result: ${result}`);
 		} catch (error) {
 			vscode.window.showErrorMessage(`Indexer failed with error: ${error}`);
@@ -114,6 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	vscode.commands.executeCommand('extensions.useWorker');
 
+	/*
 	vscode.languages.registerHoverProvider('cpp', {
 		async provideHover(document, position, cancellationToken): Promise<vscode.Hover> {
 			const editor = vscode.window.activeTextEditor;
@@ -197,6 +183,7 @@ export function activate(context: vscode.ExtensionContext) {
 			};
 		}
 	});
+	*/
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
