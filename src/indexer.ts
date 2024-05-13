@@ -49,8 +49,8 @@ function getCacheDirectory(): string
     return path.join(baseDir, 'vscode', 'cz.dvratil.vscode-qch');
 }
 
-type SymbolId = number;
-type FileId = number;
+export type SymbolId = number;
+export type FileId = number;
 
 type Anchor = {
     name: string;
@@ -58,7 +58,7 @@ type Anchor = {
     len: number;
 };
 
-type SymbolData = {
+export type SymbolData = {
     fileId: FileId;
     anchor: Anchor;
 };
@@ -214,36 +214,6 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
     }
 }
 
-/*
-async function reindex()
-{
-    const sqlite = await initSqlJs();
-
-    // Find all files to index
-    const scanDirs = ["/usr/share/doc/qt6"];
-    let qchFileMap: QCHFileData[] = [];
-    let symbolMap = new Map<SymbolId, SymbolData>();
-    let fileMap = new Map<FileId, string>();
-
-    for (const scanDir of scanDirs) {
-        const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(scanDir));
-        for (const [name, type] of entries) {
-            const file_path = path.join(scanDir, name);
-            if (type === vscode.FileType.File && name.endsWith('.qch')) {
-                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(file_path));
-                qchFileMap.push({ path: file_path, mtime: stat.mtime, size: stat.size });
-            }
-
-            try {
-                await indexQCHFile(sqlite, file_path, symbolMap, fileMap);
-            } catch (e) {
-                console.error("Failed to index QCH file: ", file_path, e);
-            }
-        }
-    }
-}
-*/
-
 type IndexCheckResult = {
     filesToReindex: string[];
 };
@@ -293,10 +263,29 @@ export class Indexer
         return { filesToReindex: filesToReindex };
     }
 
+    public async index(qchFiles: string[]): Promise<void>
+    {
+        const sqlite = await initSqlJs();
+
+        const symbolMap = new Map<SymbolId, SymbolData>();
+        const fileMap = new Map<FileId, string>();
+
+        for (const file of qchFiles) {
+            await indexQCHFile(sqlite, file, symbolMap, fileMap);
+        }
+
+        //await writeSymbolMap(symbolMap);
+        //await writeFileMap(fileMap);
+    }
+
     private emitProgress(total: number, done: number)
     {
         if (this.onProgress) {
             this.onProgress(Math.min(done, total), total);
         }
     }
+};
+
+export const exportedForTests = {
+    indexQCHFile: indexQCHFile
 };

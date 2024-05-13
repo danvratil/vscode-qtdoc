@@ -1,0 +1,23 @@
+project                 = Test
+description             = Test Documentation
+version                 = 1.0
+moduleheader            = TestDoc
+
+headerdirs              = include
+sourcedirs              = src
+
+outputdir               = output
+
+qhp.projects            = Test
+
+qhp.Test.file           = test.qhp
+qhp.Test.namespace      = org.cz.dvratil.Test.1
+qhp.Test.virtualFolder       = testfolder
+qhp.Test.indexTitle          = Test Documentation
+qhp.Test.indexRoot           =
+
+qhp.Test.subprojects         = classes
+qhp.Test.subprojects.classes.title = C++ Classes
+qhp.Test.subprojects.classes.indexTitle = Test C++ Classes
+qhp.Test.subprojects.classes.selectors = class fake:headerfile
+qhp.Test.subprojects.classes.sortPages = true
