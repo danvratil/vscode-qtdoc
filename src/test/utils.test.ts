@@ -1,16 +1,14 @@
 import * as assert from 'assert';
-import * as indexer from '../indexer';
+import { ntohl, qUncompress, sha256 } from '../utils.js';
 
-suite('Indexer', async () => {
+suite('Utils', async () => {
     test("ntohl", () => {
-        const ntohl = indexer.exportedForTesting.ntohl;
         assert.strictEqual(ntohl(new Uint8Array([0x0D, 0x0C, 0x0B, 0x0A])), 0x0D0C0B0A);
         assert.strictEqual(ntohl(new Uint8Array([0x00, 0x00, 0x01, 0x00])), 0x100);
         assert.strictEqual(ntohl(new Uint8Array([0x00, 0x01, 0x00, 0x00])), 0x10000);
 
     });
 
-    const qUncompress = indexer.exportedForTesting.qUncompress;
     test("qUncompress - success", async () => {
         // "Hello World!" string compressed using qCompress()
         const compressed = new Uint8Array([
@@ -38,5 +36,9 @@ suite('Indexer', async () => {
         ]);
 
         assert.rejects(() => qUncompress(compressed));
+    });
+
+    test("sha256", async () => {
+        assert.strictEqual(await sha256("Hello World!"), "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069");
     });
 });
