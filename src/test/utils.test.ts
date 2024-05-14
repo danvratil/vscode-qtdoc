@@ -35,7 +35,7 @@ suite('Utils', async () => {
             0x1c, 0x49, 0x04, 0x3e
         ]);
 
-        assert.rejects(() => qUncompress(compressed));
+        await assert.rejects(() => qUncompress(compressed));
     });
 
     test("sha256", async () => {
