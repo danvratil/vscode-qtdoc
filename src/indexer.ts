@@ -111,14 +111,17 @@ async function isCachedFileValid(file: QCHFileData): Promise<boolean>
 async function extractFileDataFromQCH(db: initSqlJs.Database, qchFileName: string, qchFileId: number, fileName: string): Promise<Uint8Array>
 {
     const result = db.exec("SELECT Data FROM FileDataTable WHERE Id = :fileId", { ':fileId': qchFileId });
+    if (result.length === 0 || result[0].values.length === 0) {
+        throw new Error(`Couldn't find data for fileId ${qchFileId} (${fileName}) in ${qchFileName}`);
+    }
     const data = result[0].values[0][0] as Uint8Array | undefined;
     if (!data) {
-        throw new Error("Failed to extract file data");
+        throw new Error(`No data for fileId ${qchFileId} (${fileName}) in ${qchFileName}`);
     }
 
     const buffer = await qUncompress(data);
     if (!buffer) {
-        throw new Error("Failed to decompress file data");
+        throw new Error(`Failed to decompress file data for fileId ${qchFileId} (${fileName}) in ${qchFileName}`);
     }
 
     return buffer;
@@ -154,7 +157,7 @@ async function extractAnchor(document: HTMLElement, anchor: string): Promise<Anc
 {
     const doc_header_elem = document.querySelector(`h3#${anchor}`);
     if (!doc_header_elem) {
-        throw new Error("Failed to find anchor in HTML doc");
+        throw new Error(`Failed to find anchor ${anchor}`);
     }
 
     let doc_node = doc_header_elem.nextElementSibling;
@@ -189,6 +192,10 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
                            "FROM IndexTable " +
                            "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
                            "ORDER BY FileId ASC");
+    if (result.length === 0) {
+        console.log(`No symbols found in ${qchFileName}`);
+        return;
+    }
     let lastQCHFileId = -1;
     let lastParsedHtmlFile: HTMLElement | undefined = undefined;
     let fileId = -1;
@@ -210,11 +217,29 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
             lastQCHFileId = qchFileId;
         }
 
-        symbolMap.set(generateSymbolId(identifier), {
-            fileId: fileId,
-            anchor: await extractAnchor(lastParsedHtmlFile!, anchor)
+        await extractAnchor(lastParsedHtmlFile!, anchor).then((anchor: Anchor) => {
+            symbolMap.set(generateSymbolId(identifier), {
+                fileId: fileId,
+                anchor: anchor
+            });
+        }).catch((e: Error) => {
+            console.log(`Skipping symbol ${identifier} in file ${fileName} due to error: `, e.message);
         });
     }
+}
+
+async function writeMapFile(map: Map<number, SymbolData | string>, filePath: string)
+{
+    const replacer = (key: string, value: Map<number, SymbolData | string>) => {
+        if(value instanceof Map) {
+            return [...value];
+        } else {
+            return value;
+        }
+    };
+
+    const data = JSON.stringify(map, replacer);
+    await fs.writeFile(filePath, data);
 }
 
 type IndexCheckResult = {
@@ -273,12 +298,13 @@ export class Indexer
         const symbolMap = new Map<SymbolId, SymbolData>();
         const fileMap = new Map<FileId, string>();
 
-        for (const file of qchFiles) {
+        for (const [index, file] of qchFiles.entries()) {
             await indexQCHFile(sqlite, file, symbolMap, fileMap);
+            this.emitProgress(qchFiles.length, index + 1);
         }
 
-        //await writeSymbolMap(symbolMap);
-        //await writeFileMap(fileMap);
+        await writeMapFile(symbolMap, path.join(getCacheDirectory(), 'symbol_map.json'));
+        await writeMapFile(fileMap, path.join(getCacheDirectory(), 'file_map.json'));
     }
 
     private emitProgress(total: number, done: number)
