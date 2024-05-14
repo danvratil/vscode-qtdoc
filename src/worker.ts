@@ -6,7 +6,7 @@ type Message = {
     qchDirectories: string[]
 } | {
     type: 'reindex'
-    qchDirectories: string[]
+    qchFiles: string[]
 };
 
 export type Response = {
@@ -18,6 +18,8 @@ export type Response = {
 } | {
     type: 'checkIndexDone'
     filesToReindex: string[];
+} | {
+    type: 'indexingDone'
 } | {
     type: 'error';
     error: string;
@@ -37,6 +39,16 @@ parentPort!.addListener('message', async (message: Message) => {
             return;
         }
     } else if (message.type === 'reindex') {
-        // TODO
+        const indexer = new Indexer();
+        indexer.onProgress = (done: number, total: number) => {
+            parentPort!.postMessage({ type: 'progress', progress: { done: done, total: total } });
+        };
+        try {
+            await indexer.index(message.qchFiles);
+            parentPort!.postMessage({ type: 'indexingDone' });
+        } catch (e) {
+            parentPort!.postMessage({ type: 'error', error: (e as Error).message });
+            return;
+        }
     }
 });
