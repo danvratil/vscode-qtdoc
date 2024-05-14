@@ -110,7 +110,7 @@ async function isCachedFileValid(file: QCHFileData): Promise<boolean>
 
 async function extractFileDataFromQCH(db: initSqlJs.Database, qchFileName: string, qchFileId: number, fileName: string): Promise<Uint8Array>
 {
-    const result = db.exec("SELECT Data FROM FileDataTable WHERE FileId = :fileId", { ':fileId': qchFileId });
+    const result = db.exec("SELECT Data FROM FileDataTable WHERE Id = :fileId", { ':fileId': qchFileId });
     const data = result[0].values[0][0] as Uint8Array | undefined;
     if (!data) {
         throw new Error("Failed to extract file data");
@@ -160,8 +160,8 @@ async function extractAnchor(document: HTMLElement, anchor: string): Promise<Anc
     let doc_node = doc_header_elem.nextElementSibling;
     let end = doc_node?.range[1] || 0;
     while (doc_node && doc_node.tagName !== 'H3') {
-        doc_node = doc_node.nextElementSibling;
         end = doc_node?.range[1] || 0;
+        doc_node = doc_node.nextElementSibling;
     }
 
     return {
@@ -175,7 +175,10 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
 {
     console.log("Indexing QCH file: ", qchFileName);
 
-    const data = await fs.readFile(qchFileName);
+    const data = await fs.readFile(qchFileName).catch((e: Error) => {
+        console.error("Failed to read QCH file: ", qchFileName, e.message);
+        throw e;
+    });
     const db = new sqlite.Database(data);
 
     // List all symbols, their Anchors and also the files their documentation is stored in.
@@ -185,7 +188,7 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
                            "       IndexTable.FileId AS FileId, FileNameTable.Name AS FileName " +
                            "FROM IndexTable " +
                            "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
-                           "ORDER BY IndexTable.FileId ASC");
+                           "ORDER BY FileId ASC");
     let lastQCHFileId = -1;
     let lastParsedHtmlFile: HTMLElement | undefined = undefined;
     let fileId = -1;
