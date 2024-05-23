@@ -158,6 +158,10 @@ async function extractAnchor(document: HTMLElement, anchor: string | undefined):
         }
 
         let doc_node = doc_header_elem.nextElementSibling;
+        // Start offset is offset of the first element after the heading.
+        // We don't want to include the header in the documentation, since it contains the
+        // function definition, which is already displayed in the hover from the C++ intellisense.
+        const start = doc_node?.range[0] || 0;
         let end = doc_node?.range[1] || 0;
         while (doc_node && doc_node.tagName !== 'H3') {
             end = doc_node?.range[1] || 0;
@@ -165,7 +169,7 @@ async function extractAnchor(document: HTMLElement, anchor: string | undefined):
         }
 
         return {
-            offset: doc_header_elem.range[0],
+            offset: start,
             len: Math.max(0, end - doc_header_elem.range[0])
         };
     } else {
