@@ -162,19 +162,21 @@ export function activate(context: vscode.ExtensionContext) {
 
 			const editor = vscode.window.activeTextEditor;
 
-			const definition = await vscode.commands.executeCommand<vscode.Definition | vscode.LocationLink[]>("vscode.executeDefinitionProvider", editor?.document.uri, position);
-			if (!definition) {
+			const definitions = await vscode.commands.executeCommand<vscode.Definition | vscode.LocationLink[]>("vscode.executeDefinitionProvider", editor?.document.uri, position);
+			if (!definitions) {
 				return { contents: [] };
 			}
 
-			const def = (Array.isArray(definition) ? definition[0] : definition) as vscode.Location;
-			const doc = await vscode.workspace.openTextDocument(def.uri);
-			if (!doc.validateRange(def.range)) {
+			// Take the last definition, as those tend to be the correct ones if the provider somehow discovers
+			// a same-name definition in the current project.
+			const definition = (Array.isArray(definitions) ? definitions[definitions.length -1] : definitions) as vscode.Location;
+			const doc = await vscode.workspace.openTextDocument(definition.uri);
+			if (!doc.validateRange(definition.range)) {
 				return { contents: [] };
 			}
 
-			const rangeText = doc.getText(def.range);
-			const sourceLine = doc.lineAt(def.range.start.line).text;
+			const rangeText = doc.getText(definition.range);
+			const sourceLine = doc.lineAt(definition.range.start.line).text;
 
 			const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>("vscode.executeDocumentSymbolProvider", doc.uri);
 			let start = performance.now();
