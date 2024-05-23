@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: MIT
+
 import * as path from 'path';
 import fs from 'fs/promises';
 import initSqlJs from 'sql.js';

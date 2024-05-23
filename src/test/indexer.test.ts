@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: MIT
+
 import * as assert from 'assert';
 import initSqlJs from 'sql.js';
 import { exportedForTests, SymbolId, SymbolData, FileId } from '../indexer';
