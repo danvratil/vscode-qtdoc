@@ -21,8 +21,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "vscode-extension-qch.rescan",
-        "title": "Rescan QCH files"
+        "command": "vscode-extension-qch.reindex",
+        "title": "Rescan Qt Documentation"
       }
     ]
   },
