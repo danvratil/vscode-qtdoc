@@ -70,7 +70,7 @@ function getQCHDirectories(): string[] {
 	return vscode.workspace.getConfiguration('qch').get<string[]>('paths') || defaultQCHPaths();
 }
 
-async function checkIndex(context: vscode.ExtensionContext): Promise<string[]> {
+async function checkIndex(context: vscode.ExtensionContext): Promise<boolean> {
 	return vscode.window.withProgress({
 		location: vscode.ProgressLocation.Notification,
 		cancellable: true,
@@ -84,7 +84,7 @@ async function checkIndex(context: vscode.ExtensionContext): Promise<string[]> {
 				progress.report({ increment: newProgressPercent - donePercent });
 				donePercent = newProgressPercent;
 			} else if (message.type === 'checkIndexDone') {
-				resolve(message.filesToReindex);
+				resolve(message.needsReindexing);
 			} else if (message.type === 'error') {
 				reject(new Error(message.error));
 			}
@@ -98,7 +98,7 @@ async function checkIndex(context: vscode.ExtensionContext): Promise<string[]> {
 	}));
 }
 
-async function reindex(context: vscode.ExtensionContext, filesToReindex: string[]): Promise<void> {
+async function reindex(context: vscode.ExtensionContext): Promise<void> {
 	return vscode.window.withProgress({
 		location: vscode.ProgressLocation.Notification,
 		cancellable: true,
@@ -124,7 +124,7 @@ async function reindex(context: vscode.ExtensionContext, filesToReindex: string[
 			reject(code);
 		});
 
-		worker.postMessage({ type: "reindex", qchFiles: filesToReindex });
+		worker.postMessage({ type: "reindex", qchDirectories: getQCHDirectories() });
 	}));
 }
 
@@ -132,21 +132,16 @@ async function reindex(context: vscode.ExtensionContext, filesToReindex: string[
 export function activate(context: vscode.ExtensionContext) {
 	console.log("QCH extension activating");
 
-	let indexerDisposable = vscode.commands.registerCommand('extensions.useWorker', async () => {
+	// Check index and trigger reindexing, if necessary
+	(async () => {
 		try {
-			const filesToReindex = await checkIndex(context);
-			if (filesToReindex.length > 0) {
-				await reindex(context, filesToReindex);
+			if (await checkIndex(context)) {
+				await reindex(context);
 			}
 		} catch (error) {
 			vscode.window.showErrorMessage(`Indexer failed with error: ${error}`);
 		}
-	});
-
-
-	context.subscriptions.push(indexerDisposable);
-
-	vscode.commands.executeCommand('extensions.useWorker');
+	})();
 
 	vscode.languages.registerHoverProvider('cpp', {
 		async provideHover(document, position, cancellationToken): Promise<vscode.Hover> {
@@ -240,13 +235,8 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('vscode-extension-qch.rescan', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Re-scanning QCH files');
+	let disposable = vscode.commands.registerCommand('vscode-extension-qch.reindex', async () => {
+		await reindex(context);
 	});
 
 	context.subscriptions.push(disposable);

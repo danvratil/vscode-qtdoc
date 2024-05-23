@@ -2,11 +2,8 @@ import { parentPort } from 'worker_threads';
 import { Indexer } from './indexer';
 
 type Message = {
-    type: 'checkIndex',
+    type: 'checkIndex' | 'reindex';
     qchDirectories: string[]
-} | {
-    type: 'reindex'
-    qchFiles: string[]
 };
 
 export type Response = {
@@ -16,8 +13,8 @@ export type Response = {
         total: number;
     }
 } | {
-    type: 'checkIndexDone'
-    filesToReindex: string[];
+    type: 'checkIndexDone',
+    needsReindexing: boolean
 } | {
     type: 'indexingDone'
 } | {
@@ -33,7 +30,7 @@ parentPort!.addListener('message', async (message: Message) => {
         };
         try {
             const result = await indexer.checkIndex(message.qchDirectories);
-            parentPort!.postMessage({ type: 'checkIndexDone', filesToReindex: result.filesToReindex });
+            parentPort!.postMessage({ type: 'checkIndexDone', needsReindexing: result });
         } catch (e) {
             parentPort!.postMessage({ type: 'error', error: (e as Error).message });
             return;
@@ -44,7 +41,7 @@ parentPort!.addListener('message', async (message: Message) => {
             parentPort!.postMessage({ type: 'progress', progress: { done: done, total: total } });
         };
         try {
-            await indexer.index(message.qchFiles);
+            await indexer.index(message.qchDirectories);
             parentPort!.postMessage({ type: 'indexingDone' });
         } catch (e) {
             parentPort!.postMessage({ type: 'error', error: (e as Error).message });

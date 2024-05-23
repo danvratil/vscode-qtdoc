@@ -266,15 +266,19 @@ async function writeMapFile<K, V>(map: Map<K,V>, filePath: string)
     await fs.writeFile(filePath, data);
 }
 
-type IndexCheckResult = {
-    filesToReindex: string[];
-};
+async function clearCacheDirectory()
+{
+    const cacheDir = getCacheDirectory();
+    await fs.rmdir(cacheDir, { recursive: true }).catch((e: Error) => {
+        console.warn("Failed to clear cache directory: ", cacheDir, e.message);
+    });
+}
 
 export class Indexer
 {
     public onProgress: ((done: number, total: number) => void) | undefined;
 
-    public async checkIndex(qchDirectories: string[]): Promise<IndexCheckResult>
+    public async checkIndex(qchDirectories: string[]): Promise<boolean>
     {
         const existingQCHFiles = await discoverQCHFiles(qchDirectories);
         console.log("Discovered QCH files: ", existingQCHFiles.size);
@@ -282,7 +286,7 @@ export class Indexer
         const cachedQCHFiles = await getCachedQCHFiles();
         console.log("Cached QCH files: ", cachedQCHFiles.length);
 
-        let filesToReindex: string[] = [];
+        let needsReindexing = false;
         let processedFiles = 0;
 
         // Calculate union of cached and existing QCH files to get total number of files to process
@@ -294,7 +298,8 @@ export class Indexer
             if (existingQCHFiles.has(cachedFile[0])) {
                 if (!await isCachedFileValid(path, info)) {
                     console.log(`QCH file ${path} has changed!`);
-                    filesToReindex.push(path);
+                    needsReindexing = true;
+                    break;
                 }
 
                 existingQCHFiles.delete(path);
@@ -309,15 +314,15 @@ export class Indexer
         if (existingQCHFiles.size > 0) {
             for (const file of existingQCHFiles) {
                 console.log(`New QCH file found: ${file}`);
-                filesToReindex.push(file);
-                this.emitProgress(total, processedFiles++);
+                needsReindexing = true;
+                break;
             }
         }
 
-        return { filesToReindex: filesToReindex };
+        return needsReindexing;
     }
 
-    public async index(qchFiles: string[]): Promise<void>
+    public async index(qchDirectories: string[]): Promise<void>
     {
         const sqlite = await initSqlJs();
 
@@ -325,10 +330,15 @@ export class Indexer
         const fileMap = new Map<FileId, string>();
         const indexedQCHFiles = new Map<string, QCHFileInfo>();
 
-        for (const [index, file] of qchFiles.entries()) {
+        await clearCacheDirectory();
+
+        const qchFiles = await discoverQCHFiles(qchDirectories);
+        let index = 0;
+        for (const [file] of qchFiles.entries()) {
             await indexQCHFile(sqlite, file, symbolMap, fileMap);
             indexedQCHFiles.set(file, await getQCHFileInfo(file));
-            this.emitProgress(qchFiles.length, index + 1);
+            this.emitProgress(qchFiles.size, index + 1);
+            index++;
         }
 
         await writeMapFile(symbolMap, path.join(getCacheDirectory(), 'symbol_map.json'));
