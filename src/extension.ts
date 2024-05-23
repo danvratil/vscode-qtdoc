@@ -225,7 +225,10 @@ export function activate(context: vscode.ExtensionContext) {
 			});
 
 			const data = await dataPromise;
-			const md = NodeHtmlMarkdown.translate(data, {});
+			let md = NodeHtmlMarkdown.translate(data);
+			// Replace relative links with absolute link to online documentation
+			// FIXME: Ideally we would do this in the NodeHtmlMarkdown with a custom translator
+			md = md.replace(/([a-zA-Z0-9\-_]+\.html)/g, 'https://doc.qt.io/qt-6/$1');
 
 			console.log(`Documentation for symbol ${fqSymbol.name} resolved in ${performance.now() - hoverStart} ms`);
 
