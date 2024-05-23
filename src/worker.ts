@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: MIT
+
 import { parentPort } from 'worker_threads';
 import { Indexer } from './indexer';
 

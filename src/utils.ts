@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: MIT
+
 import { promisify } from "util";
 import { inflate } from "zlib";
 import { Sha256 } from "@aws-crypto/sha256-js";

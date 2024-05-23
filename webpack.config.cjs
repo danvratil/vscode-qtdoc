@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: MIT
+
 //@ts-check
 
 'use strict';
