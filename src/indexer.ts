@@ -151,8 +151,6 @@ const escapeAnchor = (anchor: string) => anchor.replace(/\./g, '\\.');
 
 async function extractAnchor(document: HTMLElement, anchor: string | undefined): Promise<Anchor>
 {
-    // When achor is empty then we assume the symbol is a class, so we extract the detailed description
-    // of the class.
     if (anchor) {
         const doc_header_elem = document.querySelector(`h3#${escapeAnchor(anchor)}`);
         if (!doc_header_elem) {
