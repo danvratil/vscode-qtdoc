@@ -26,21 +26,18 @@ suite("Indexer", async () => {
         const testPropertyKey = string_hash("TestClass::testProperty");
         assert.ok(symbolMap.has(testPropertyKey));
         const testProperty = symbolMap.get(testPropertyKey)!;
-        assert.strictEqual(testProperty.anchor.name, "testProperty-prop");
         assert.ok(testProperty.anchor.offset > 0);
         assert.ok(testProperty.anchor.len > 0);
 
         const testPropertyChangedKey = string_hash("TestClass::testPropertyChanged");
         assert.ok(symbolMap.has(testPropertyChangedKey));
         const testPropertyChanged = symbolMap.get(testPropertyChangedKey)!;
-        assert.strictEqual(testPropertyChanged.anchor.name, "testPropertyChanged");
         assert.ok(testPropertyChanged.anchor.offset > 0);
         assert.ok(testPropertyChanged.anchor.len > 0);
 
         const testSignalKey = string_hash("TestClass::testSignal");
         assert.ok(symbolMap.has(testSignalKey));
         const testSignal = symbolMap.get(testSignalKey)!;
-        assert.strictEqual(testSignal.anchor.name, "testSignal")!;
         assert.ok(testSignal.anchor.offset > 0);
         assert.ok(testSignal.anchor.len > 0);
 

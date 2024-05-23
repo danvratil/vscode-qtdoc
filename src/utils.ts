@@ -1,6 +1,8 @@
 import { promisify } from "util";
 import { inflate } from "zlib";
 import { Sha256 } from "@aws-crypto/sha256-js";
+import os from 'os';
+import path from "path";
 
 const hostEndianness = (() => {
     const u16 = Uint16Array.of(1);
@@ -71,3 +73,23 @@ export async function sha256(data: string): Promise<string>
     return hashArray.map(b => ('00' + b.toString(16)).slice(-2)).join('');
 }
 
+/**
+ * @returns Returns platform-specific path to the cache directory for this extension.
+ */
+export function getCacheDirectory(): string
+{
+    const baseDir = (() => {
+        switch (process.platform) {
+            case 'linux':
+                return process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
+            case 'win32':
+                return process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+            case 'darwin':
+                return path.join(os.homedir(), 'Library', 'Caches');
+            default:
+                throw new Error("Unsupported platform");
+        }
+    })();
+
+    return path.join(baseDir, 'vscode-qtdoc');
+}

@@ -1,9 +1,18 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } from 'node-html-markdown';
+import fs from 'fs/promises';
+import path from 'path';
+
+import { NodeHtmlMarkdown } from 'node-html-markdown';
 import { Worker } from 'worker_threads';
+
 import { Response } from './worker.js';
+import { FileId, SymbolData, SymbolId, generateSymbolId } from './indexer';
+import { getCacheDirectory } from './utils';
+
+let symbolMap: Map<SymbolId, SymbolData> | undefined = undefined;
+let fileMap: Map<FileId, string> | undefined = undefined;
 
 type Symbol = {
 	name: string,
@@ -27,10 +36,19 @@ function resolveFQSymbol(symbols: vscode.DocumentSymbol[], symbol: string): Symb
 	return undefined;
 }
 
-type Result = {
-	path: string,
-	anchor: string | undefined
-};
+async function initializeLookupMaps(): Promise<void> {
+	async function readJsonFile<K, V>(file: string): Promise<Map<K, V>> {
+		const result = await fs.readFile(file);
+		const json = JSON.parse(new TextDecoder().decode(result));
+		return new Map<K, V>(json);
+	}
+
+	const symbolMapFile = path.join(getCacheDirectory(), 'symbol_map.json');
+	symbolMap = await readJsonFile(symbolMapFile);
+
+	const fileMapFile = path.join(getCacheDirectory(), 'file_map.json');
+	fileMap = await readJsonFile(fileMapFile);
+}
 
 function defaultQCHPaths(): string[]
 {
@@ -98,6 +116,8 @@ async function reindex(context: vscode.ExtensionContext, filesToReindex: string[
 			} else if (message.type === 'error') {
 				reject(new Error(message.error));
 			}
+
+			symbolMap = undefined;
 		});
 		worker.on("error", (code) => {
 			console.error(`Worker error: ${code.message}`);
@@ -107,6 +127,7 @@ async function reindex(context: vscode.ExtensionContext, filesToReindex: string[
 		worker.postMessage({ type: "reindex", qchFiles: filesToReindex });
 	}));
 }
+
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log("QCH extension activating");
@@ -127,91 +148,92 @@ export function activate(context: vscode.ExtensionContext) {
 
 	vscode.commands.executeCommand('extensions.useWorker');
 
-	/*
 	vscode.languages.registerHoverProvider('cpp', {
 		async provideHover(document, position, cancellationToken): Promise<vscode.Hover> {
+
+			let hoverStart = performance.now();
+
+			if (!symbolMap || !fileMap) {
+				await initializeLookupMaps();
+				if (!symbolMap || !fileMap) {
+					return { contents: [] };
+				}
+			}
+
 			const editor = vscode.window.activeTextEditor;
 
 			const definition = await vscode.commands.executeCommand<vscode.Definition | vscode.LocationLink[]>("vscode.executeDefinitionProvider", editor?.document.uri, position);
 			if (!definition) {
-				return { contents: []};
+				return { contents: [] };
 			}
 
 			const def = (Array.isArray(definition) ? definition[0] : definition) as vscode.Location;
 			const doc = await vscode.workspace.openTextDocument(def.uri);
 			if (!doc.validateRange(def.range)) {
-				console.log("Invalid range");
 				return { contents: [] };
 			}
 
 			const rangeText = doc.getText(def.range);
-			console.log(`Range text: ${rangeText}`);
 			const sourceLine = doc.lineAt(def.range.start.line).text;
-			console.log(`Source line: ${sourceLine}`);
 
 			const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>("vscode.executeDocumentSymbolProvider", doc.uri);
 			let start = performance.now();
 			const fqSymbol = resolveFQSymbol(symbols, rangeText);
-			console.log(`FQ symbol: ${fqSymbol}, took ${performance.now() - start} ms`);
+			console.log(`FQ symbol: ${fqSymbol?.name}, ${fqSymbol?.type}, took ${performance.now() - start} ms`);
 			if (!fqSymbol) {
 				return { contents: [] };
 			}
 
-			start = performance.now();
-			const result = await resolveSymbolDocs(context, fqSymbol.name);
-			if (!result) {
-				console.error("Failed to resolve FQ symbol in DB");
+			const symbolId = generateSymbolId(fqSymbol.name);
+			if (!symbolId) {
 				return { contents: [] };
 			}
-			console.log(`FQ symbol docs path: ${result.path}, anchor: ${result.anchor}, took ${performance.now() - start} ms`);
 
-			const html = await (async () => {
-				try {
-					return await vscode.workspace.fs.readFile(vscode.Uri.parse(`file:///usr/share/doc/qt6/${result.path}`));
-				} catch (e) {
-					console.error("Failed to load HMTL doc file: ", e);
-					return undefined;
-				}
-			})();
-			if (!html) {
-				console.error("Failed to load HMTL doc file");
+			const symbolData = symbolMap.get(symbolId);
+			if (!symbolData) {
+				console.debug(`No documentation for symbol ID ${symbolId} (symbol ${fqSymbol.name})`);
 				return { contents: [] };
 			}
-			console.log("Loaded HTML file");
 
-			const root = (() => { try {
-				return parse(html.toString());
-			} catch (e) {
-				console.error("Failed to parse HTML doc");
-				return undefined;
-			} })();
-			console.log("Parsed HTML file");
-
-			if (!root) {
+			const filePath = fileMap.get(symbolData.fileId);
+			if (!filePath) {
 				return { contents: [] };
 			}
-			const elem = root.querySelector(`h3#${result.anchor}`);
-			if (!elem) {
-				console.error("Failed to find anchor in HTML doc");
-				return { contents: [] };
-			}
-			console.log("Found anchor in HTML doc");
 
-			let docu = "";
-			let para = elem?.nextElementSibling;
-			while (para && para.tagName.toLowerCase() === "p") {
-				docu += para.outerHTML;
-				para = para.nextElementSibling;
-			}
+			const fd = await fs.open(filePath, 'r');
+			const stream = fd.createReadStream({
+				autoClose: true,
+				start: symbolData.anchor.offset,
+				end: symbolData.anchor.offset + symbolData.anchor.len
+			});
 
-			const md = NodeHtmlMarkdown.translate(docu, {});
+			let dataPromise = new Promise<string>((resolve, reject) => {
+				let data = "";
+				stream.on('data', (chunk: string | Buffer) => {
+					if (chunk instanceof Buffer) {
+						data += chunk.toString('utf8');
+					} else {
+						data += chunk;
+					}
+				});
+				stream.on('end', () => {
+					resolve(data);
+				});
+				stream.on('error', (err) => {
+					reject(err);
+				});
+			});
+
+			const data = await dataPromise;
+			const md = NodeHtmlMarkdown.translate(data, {});
+
+			console.log(`Documentation for symbol ${fqSymbol.name} resolved in ${performance.now() - hoverStart} ms`);
 
 			return {
 				contents: [md]
 			};
 		}
 	});
-	*/
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
