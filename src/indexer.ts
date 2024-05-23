@@ -1,9 +1,8 @@
-import * as os from 'os';
 import * as path from 'path';
 import fs from 'fs/promises';
 import initSqlJs from 'sql.js';
 import { parse as parse_html, HTMLElement } from 'node-html-parser';
-import { qUncompress, sha256 } from './utils';
+import { qUncompress, sha256, getCacheDirectory } from './utils';
 
 const string_hash = require('string-hash-64');
 
@@ -31,29 +30,11 @@ const string_hash = require('string-hash-64');
  */
 
 
-function getCacheDirectory(): string
-{
-    const baseDir = (() => {
-        switch (process.platform) {
-            case 'linux':
-                return process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
-            case 'win32':
-                return process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-            case 'darwin':
-                return path.join(os.homedir(), 'Library', 'Caches');
-            default:
-                throw new Error("Unsupported platform");
-        }
-    })();
-
-    return path.join(baseDir, 'vscode', 'cz.dvratil.vscode-qch');
-}
 
 export type SymbolId = number;
 export type FileId = number;
 
 type Anchor = {
-    name: string;
     offset: number;
     len: number;
 };
@@ -63,8 +44,7 @@ export type SymbolData = {
     anchor: Anchor;
 };
 
-type QCHFileData = {
-    path: string;
+type QCHFileInfo = {
     mtime: number;
     size: number;
 };
@@ -78,7 +58,12 @@ async function discoverQCHFiles(scanDirs: string[]): Promise<Set<string>>
             return [];
         });
         for (const entry of entries) {
-            if (entry.isFile() && entry.name.endsWith('.qch')) {
+            // Explicitly ignore any QCH files that are not from Qt documentation itself.
+            // For instance, KDE Frameworks provide QCH documentation as well, but it's from Doxygen,
+            // so the HTML format is different and also we don't actually need to extract docs from
+            // it, because KDE Frameworks have docs in their header files, so they get extracted
+            // by the C++ parser.
+            if (entry.isFile() && entry.name.startsWith("qt") && entry.name.endsWith('.qch')) {
                 existingFiles.add(path.join(scanDir, entry.name));
             }
         }
@@ -87,7 +72,7 @@ async function discoverQCHFiles(scanDirs: string[]): Promise<Set<string>>
     return existingFiles;
 }
 
-async function getCachedQCHFiles(): Promise<QCHFileData[]>
+async function getCachedQCHFiles(): Promise<[string, QCHFileInfo][]>
 {
     const cacheDir = getCacheDirectory();
     const qchCacheFile = path.join(cacheDir, 'qch_file_map.json');
@@ -99,13 +84,22 @@ async function getCachedQCHFiles(): Promise<QCHFileData[]>
         console.warn("Failed to read cached QCH file map: ", e.toString());
         throw e;
     });
-    return JSON.parse(filemap_data.toString()) as QCHFileData[];
+    return JSON.parse(filemap_data.toString());
 }
 
-async function isCachedFileValid(file: QCHFileData): Promise<boolean>
+async function getQCHFileInfo(file: string): Promise<QCHFileInfo>
 {
-    const stat = await fs.stat(file.path);
-    return stat.mtime === new Date(file.mtime * 1000) || stat.size === file.size;
+    const stat = await fs.stat(file);
+    return {
+        mtime: stat.mtime.getTime() / 1000,
+        size: stat.size
+    };
+}
+
+async function isCachedFileValid(file: string, info: QCHFileInfo): Promise<boolean>
+{
+    const stat = await fs.stat(file);
+    return stat.mtime === new Date(info.mtime * 1000) || stat.size === info.size;
 }
 
 async function extractFileDataFromQCH(db: initSqlJs.Database, qchFileName: string, qchFileId: number, fileName: string): Promise<Uint8Array>
@@ -148,30 +142,45 @@ function generateFileId(filePath: string): FileId
     return string_hash(filePath);
 }
 
-function generateSymbolId(symbol: string): SymbolId
+export function generateSymbolId(symbol: string): SymbolId
 {
     return string_hash(symbol);
 }
 
-async function extractAnchor(document: HTMLElement, anchor: string): Promise<Anchor>
+const escapeAnchor = (anchor: string) => anchor.replace(/\./g, '\\.');
+
+async function extractAnchor(document: HTMLElement, anchor: string | undefined): Promise<Anchor>
 {
-    const doc_header_elem = document.querySelector(`h3#${anchor}`);
-    if (!doc_header_elem) {
-        throw new Error(`Failed to find anchor ${anchor}`);
-    }
+    // When achor is empty then we assume the symbol is a class, so we extract the detailed description
+    // of the class.
+    if (anchor) {
+        const doc_header_elem = document.querySelector(`h3#${escapeAnchor(anchor)}`);
+        if (!doc_header_elem) {
+            throw new Error(`Failed to find anchor ${anchor}`);
+        }
 
-    let doc_node = doc_header_elem.nextElementSibling;
-    let end = doc_node?.range[1] || 0;
-    while (doc_node && doc_node.tagName !== 'H3') {
-        end = doc_node?.range[1] || 0;
-        doc_node = doc_node.nextElementSibling;
-    }
+        let doc_node = doc_header_elem.nextElementSibling;
+        let end = doc_node?.range[1] || 0;
+        while (doc_node && doc_node.tagName !== 'H3') {
+            end = doc_node?.range[1] || 0;
+            doc_node = doc_node.nextElementSibling;
+        }
 
-    return {
-        name: anchor,
-        offset: doc_header_elem.range[0],
-        len: Math.max(0, end - doc_header_elem.range[0])
-    };
+        return {
+            offset: doc_header_elem.range[0],
+            len: Math.max(0, end - doc_header_elem.range[0])
+        };
+    } else {
+        const descr_elem = document.querySelector("div.descr");
+        if (!descr_elem) {
+            throw new Error(`Failed to find class documentation.`);
+        }
+
+        return {
+            offset: descr_elem.range[0],
+            len: descr_elem.range[1] - descr_elem.range[0]
+        };
+    }
 }
 
 async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, symbolMap: Map<SymbolId, SymbolData>, fileMap: Map<FileId, string>)
@@ -188,7 +197,8 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
     // As an optimization, the results are sorted by FileID, so that we can extract and parse the file once
     // and reuse it for all symbols in the same file.
     const result = db.exec("SELECT IndexTable.Identifier AS Identifier, IndexTable.Anchor as Anchor, " +
-                           "       IndexTable.FileId AS FileId, FileNameTable.Name AS FileName " +
+                           "       IndexTable.FileId AS FileId, FileNameTable.Name AS FileName, " +
+                           "       FileNameTable.Title AS FileTitle " +
                            "FROM IndexTable " +
                            "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
                            "ORDER BY FileId ASC");
@@ -204,7 +214,19 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
         const anchor = row[1] as string | undefined;
         const qchFileId = row[2] as number | undefined;
         const fileName = row[3] as string | undefined;
-        if (!identifier || qchFileId  === undefined || !fileName || !anchor) {
+        const fileTitle = row[4] as string | undefined;
+        if (!identifier || qchFileId  === undefined || !fileName || !fileTitle) {
+            continue;
+        }
+
+
+        // Match "QString Class | Qt Core 6.7.0"
+        if (!fileTitle.match(/^([a-zA-Z0-9_]+) Class \| Qt(.*)/)) {
+            continue;
+        }
+
+        // We don't support QML (yet), so skip symbols whose documentation is in files prefixed with qml-
+        if (fileName.startsWith("qml-")) {
             continue;
         }
 
@@ -228,9 +250,9 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
     }
 }
 
-async function writeMapFile(map: Map<number, SymbolData | string>, filePath: string)
+async function writeMapFile<K, V>(map: Map<K,V>, filePath: string)
 {
-    const replacer = (key: string, value: Map<number, SymbolData | string>) => {
+    const replacer = (key: string, value: Map<K, V>) => {
         if(value instanceof Map) {
             return [...value];
         } else {
@@ -262,18 +284,20 @@ export class Indexer
         let processedFiles = 0;
 
         // Calculate union of cached and existing QCH files to get total number of files to process
-        const total = cachedQCHFiles.filter(file => !existingQCHFiles.has(file.path)).length + existingQCHFiles.size;
+        const total = cachedQCHFiles.filter(file => !existingQCHFiles.has(file[0])).length + existingQCHFiles.size;
 
         for (let cachedFile = cachedQCHFiles.pop(); cachedFile; cachedFile = cachedQCHFiles.pop()) {
-            if (existingQCHFiles.has(cachedFile.path)) {
-                if (!await isCachedFileValid(cachedFile)) {
-                    console.log(`QCH file ${cachedFile.path} has changed!`);
-                    filesToReindex.push(cachedFile.path);
+            const path = cachedFile[0];
+            const info = cachedFile[1];
+            if (existingQCHFiles.has(cachedFile[0])) {
+                if (!await isCachedFileValid(path, info)) {
+                    console.log(`QCH file ${path} has changed!`);
+                    filesToReindex.push(path);
                 }
 
-                existingQCHFiles.delete(cachedFile.path);
+                existingQCHFiles.delete(path);
             } else {
-                console.log(`QCH file ${cachedFile.path} removed`);
+                console.log(`QCH file ${path} removed`);
             }
 
             this.emitProgress(total, processedFiles++);
@@ -297,14 +321,18 @@ export class Indexer
 
         const symbolMap = new Map<SymbolId, SymbolData>();
         const fileMap = new Map<FileId, string>();
+        const indexedQCHFiles = new Map<string, QCHFileInfo>();
 
         for (const [index, file] of qchFiles.entries()) {
             await indexQCHFile(sqlite, file, symbolMap, fileMap);
+            indexedQCHFiles.set(file, await getQCHFileInfo(file));
             this.emitProgress(qchFiles.length, index + 1);
         }
 
         await writeMapFile(symbolMap, path.join(getCacheDirectory(), 'symbol_map.json'));
         await writeMapFile(fileMap, path.join(getCacheDirectory(), 'file_map.json'));
+        await writeMapFile(indexedQCHFiles, path.join(getCacheDirectory(), 'qch_file_map.json'));
+
     }
 
     private emitProgress(total: number, done: number)
