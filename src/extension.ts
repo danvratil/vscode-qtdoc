@@ -170,7 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage("No Qt documentation directories configured. Please configure the directories in the extension settings.",
 			"Open settings").then((value) => {
 				if (value === "Open settings") {
-					vscode.commands.executeCommand("workbench.action.openSettings", "vscode-extension-qch.qtDocPaths");
+					vscode.commands.executeCommand("workbench.action.openSettings", "qtdoc.paths");
 				}
 			}
 		);
