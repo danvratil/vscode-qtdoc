@@ -70,8 +70,8 @@ function defaultQCHPaths(): string[]
     return [];
 }
 
-function getQCHDirectories(): string[] {
-	return vscode.workspace.getConfiguration('qch').get<string[]>('paths') || defaultQCHPaths();
+function getQCHDirectories(context: vscode.ExtensionContext): string[] {
+	return vscode.workspace.getConfiguration(context.extension.id).get<string[]>('qtDocPaths') || defaultQCHPaths();
 }
 
 async function checkIndex(context: vscode.ExtensionContext): Promise<boolean> {
@@ -98,7 +98,7 @@ async function checkIndex(context: vscode.ExtensionContext): Promise<boolean> {
 			reject(code);
 		});
 
-		worker.postMessage({ type: "checkIndex", qchDirectories: getQCHDirectories() });
+		worker.postMessage({ type: "checkIndex", qchDirectories: getQCHDirectories(context) });
 	}));
 }
 
@@ -128,25 +128,44 @@ async function reindex(context: vscode.ExtensionContext): Promise<void> {
 			reject(code);
 		});
 
-		worker.postMessage({ type: "reindex", qchDirectories: getQCHDirectories() });
+		worker.postMessage({ type: "reindex", qchDirectories: getQCHDirectories(context) });
 	}));
 }
-
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log("QCH extension activating");
 
-	// Check index and trigger reindexing, if necessary
-	(async () => {
-		try {
-			if (await checkIndex(context)) {
-				await reindex(context);
+	// Check whether we have any directories to scan, show a message to the user if not
+	const qchDirectories = getQCHDirectories(context);
+	if (qchDirectories.length === 0) {
+		vscode.window.showInformationMessage("No Qt documentation directories configured. Please configure the directories in the extension settings.",
+			"Open settings").then((value) => {
+				if (value === "Open settings") {
+					vscode.commands.executeCommand("workbench.action.openSettings", "vscode-extension-qch.qtDocPaths");
+				}
 			}
-		} catch (error) {
-			vscode.window.showErrorMessage(`Indexer failed with error: ${error}`);
-		}
-	})();
+		);
+	} else {
+		// Check index and trigger reindexing, if necessary
+		(async () => {
+			try {
+				if (await checkIndex(context)) {
+					await reindex(context);
+				}
+			} catch (error) {
+				vscode.window.showErrorMessage(`Indexer failed with error: ${error}`);
+			}
+		})();
+	}
 
+	// Register a hook to trigger reindexng when the configuration changes
+	vscode.workspace.onDidChangeConfiguration((event) => {
+		if (event.affectsConfiguration('vscode-extension-qch.qtDocPaths')) {
+			reindex(context);
+		}
+	});
+
+	// Register the main hook to provide documentation on hover
 	vscode.languages.registerHoverProvider('cpp', {
 		async provideHover(document, position, cancellationToken): Promise<vscode.Hover> {
 
@@ -239,6 +258,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	// Register commands
 	let disposable = vscode.commands.registerCommand('vscode-extension-qch.reindex', async () => {
 		await reindex(context);
 	});
@@ -247,4 +267,9 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+	console.log("QCH extension deactivating");
+
+	symbolMap = undefined;
+	fileMap = undefined;
+}
