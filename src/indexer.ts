@@ -81,7 +81,7 @@ async function getCachedQCHFiles(): Promise<[string, QCHFileInfo][]>
     const cacheDir = getCacheDirectory();
     const qchCacheFile = path.join(cacheDir, 'qch_file_map.json');
     // check whether the file exists
-    if (!await fs.stat(qchCacheFile).catch((e: Error) => { return false; })) {
+    if (!await fs.stat(qchCacheFile).catch(() => { return false; })) {
         return [];
     }
     const filemap_data = await fs.readFile(qchCacheFile).catch((e: Error) => {
@@ -109,10 +109,12 @@ async function isCachedFileValid(file: string, info: QCHFileInfo): Promise<boole
 async function extractFileDataFromQCH(db: initSqlJs.Database, qchFileName: string, qchFileId: number, fileName: string): Promise<Uint8Array>
 {
     const result = db.exec("SELECT Data FROM FileDataTable WHERE Id = :fileId", { ':fileId': qchFileId });
-    if (result.length === 0 || result[0].values.length === 0) {
+    if (result.length === 0) {
         throw new Error(`Couldn't find data for fileId ${qchFileId} (${fileName}) in ${qchFileName}`);
     }
-    const data = result[0].values[0][0] as Uint8Array | undefined;
+    // result[0] is the result of the first query, values[0] is the first row
+    const row = result[0]?.values[0];
+    const data = row?.[0] as Uint8Array | undefined;
     if (!data) {
         throw new Error(`No data for fileId ${qchFileId} (${fileName}) in ${qchFileName}`);
     }
@@ -202,20 +204,21 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
     // List all symbols, their Anchors and also the files their documentation is stored in.
     // As an optimization, the results are sorted by FileID, so that we can extract and parse the file once
     // and reuse it for all symbols in the same file.
-    const result = db.exec("SELECT IndexTable.Identifier AS Identifier, IndexTable.Anchor as Anchor, " +
-                           "       IndexTable.FileId AS FileId, FileNameTable.Name AS FileName, " +
-                           "       FileNameTable.Title AS FileTitle " +
-                           "FROM IndexTable " +
-                           "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
-                           "ORDER BY FileId ASC");
-    if (result.length === 0) {
+    const results = db.exec("SELECT IndexTable.Identifier AS Identifier, IndexTable.Anchor as Anchor, " +
+                            "       IndexTable.FileId AS FileId, FileNameTable.Name AS FileName, " +
+                            "       FileNameTable.Title AS FileTitle " +
+                            "FROM IndexTable " +
+                            "LEFT JOIN FileNameTable ON (FileNameTable.FileId = IndexTable.FileId) " +
+                            "ORDER BY FileId ASC");
+    if (results.length === 0) {
         console.log(`No symbols found in ${qchFileName}`);
         return;
     }
+    const result = results[0];
     let lastQCHFileId = -1;
     let lastParsedHtmlFile: HTMLElement | undefined = undefined;
     let fileId = -1;
-    for (const row of result[0].values) {
+    for (const row of result?.values || []) {
         const identifier = row[0] as string | undefined;
         const anchor = row[1] as string | undefined;
         const qchFileId = row[2] as number | undefined;
@@ -258,7 +261,7 @@ async function indexQCHFile(sqlite: initSqlJs.SqlJsStatic, qchFileName: string, 
 
 async function writeMapFile<K, V>(map: Map<K,V>, filePath: string)
 {
-    const replacer = (key: string, value: Map<K, V>) => {
+    const replacer = (_: string, value: Map<K, V>) => {
         if(value instanceof Map) {
             return [...value];
         } else {

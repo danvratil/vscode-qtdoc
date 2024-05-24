@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: MIT
 
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import fs from 'fs/promises';
 import path from 'path';
@@ -96,6 +94,11 @@ async function checkIndex(context: vscode.ExtensionContext): Promise<boolean> {
 			reject(code);
 		});
 
+		token.onCancellationRequested(async () => {
+			// TODO: Implement proper cancellation of the scanning process
+			await worker.terminate();
+		});
+
 		worker.postMessage({ type: "checkIndex", qchDirectories: getQCHDirectories(context) });
 	}));
 }
@@ -123,6 +126,11 @@ async function reindex(context: vscode.ExtensionContext): Promise<void> {
 		worker.on("error", (code) => {
 			console.error(`Worker error: ${code.message}`);
 			reject(code);
+		});
+
+		token.onCancellationRequested(async () => {
+			// TODO: Implement proper cancellation of the indexing process
+			await worker.terminate();
 		});
 
 		worker.postMessage({ type: "reindex", qchDirectories: getQCHDirectories(context) });
