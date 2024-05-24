@@ -66,8 +66,8 @@ function defaultQCHPaths(): string[]
     return [];
 }
 
-function getQCHDirectories(context: vscode.ExtensionContext): string[] {
-	return vscode.workspace.getConfiguration(context.extension.id).get<string[]>('qtDocPaths') || defaultQCHPaths();
+function getQCHDirectories(): string[] {
+	return vscode.workspace.getConfiguration("qtdoc").get<string[]>('paths') || defaultQCHPaths();
 }
 
 async function checkIndex(context: vscode.ExtensionContext): Promise<boolean> {
@@ -99,7 +99,7 @@ async function checkIndex(context: vscode.ExtensionContext): Promise<boolean> {
 			await worker.terminate();
 		});
 
-		worker.postMessage({ type: "checkIndex", qchDirectories: getQCHDirectories(context) });
+		worker.postMessage({ type: "checkIndex", qchDirectories: getQCHDirectories() });
 	}));
 }
 
@@ -133,7 +133,7 @@ async function reindex(context: vscode.ExtensionContext): Promise<void> {
 			await worker.terminate();
 		});
 
-		worker.postMessage({ type: "reindex", qchDirectories: getQCHDirectories(context) });
+		worker.postMessage({ type: "reindex", qchDirectories: getQCHDirectories() });
 	}));
 }
 
@@ -144,7 +144,7 @@ function registerProviders(context: vscode.ExtensionContext): void {
 }
 
 function registerCommands(context: vscode.ExtensionContext): void {
-	const command = vscode.commands.registerCommand('vscode-extension-qch.reindex', async () => {
+	const command = vscode.commands.registerCommand('qtdoc.reindex', async () => {
 		await reindex(context);
 	});
 	context.subscriptions.push(command);
@@ -155,7 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Register a hook to trigger reindexng when the configuration changes
 	vscode.workspace.onDidChangeConfiguration(async (event) => {
-		if (event.affectsConfiguration('vscode-extension-qch.qtDocPaths')) {
+		if (event.affectsConfiguration('qtdoc.paths')) {
 			await reindex(context);
 			await initializeLookupMaps();
 		}
@@ -165,7 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
 	registerCommands(context);
 
 	// Check whether we have any directories to scan, show a message to the user if not
-	const qchDirectories = getQCHDirectories(context);
+	const qchDirectories = getQCHDirectories();
 	if (qchDirectories.length === 0) {
 		vscode.window.showInformationMessage("No Qt documentation directories configured. Please configure the directories in the extension settings.",
 			"Open settings").then((value) => {
