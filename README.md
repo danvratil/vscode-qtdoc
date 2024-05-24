@@ -3,7 +3,7 @@
 This extension shows documentation for Qt methods and types when you hover over
 them.
 
-![Demo](docs/demo.gif)
+https://github.com/danvratil/vscode-qtdoc/assets/932001/cea89414-4ae6-4f24-ae13-49f7a098fa91
 
 ## Setup & Configuration
 
