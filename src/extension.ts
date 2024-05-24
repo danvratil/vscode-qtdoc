@@ -8,50 +8,48 @@ import * as vscode from 'vscode';
 import fs from 'fs/promises';
 import path from 'path';
 
-import { NodeHtmlMarkdown } from 'node-html-markdown';
 import { Worker } from 'worker_threads';
 
 import { Response } from './worker.js';
-import { FileId, SymbolData, SymbolId, generateSymbolId } from './indexer';
+import { FileId, SymbolData, SymbolId } from './indexer';
 import { getCacheDirectory } from './utils';
+import { HoverProvider } from './hoverprovider';
 
-let symbolMap: Map<SymbolId, SymbolData> | undefined = undefined;
-let fileMap: Map<FileId, string> | undefined = undefined;
-
-type Symbol = {
-	name: string,
-	type: vscode.SymbolKind,
-};
-
-function resolveFQSymbol(symbols: vscode.DocumentSymbol[], symbol: string): Symbol | undefined
-{
-	for (const s of symbols) {
-		if (s.name === symbol) {
-			return { name: s.name, type: s.kind };
-		}
-
-		const subSymbol = resolveFQSymbol(s.children, symbol);
-		if (subSymbol) {
-			// We use the type of the leaf symbol
-			return { name: s.name + "::" + subSymbol.name, type: subSymbol.type };
-		}
-	}
-
-	return undefined;
-}
+const symbolMap = new Map<SymbolId, SymbolData>();
+const fileMap = new Map<FileId, string>();
 
 async function initializeLookupMaps(): Promise<void> {
-	async function readJsonFile<K, V>(file: string): Promise<Map<K, V>> {
+	async function readJsonFile<K, V>(file: string, map: Map<K, V>): Promise<void> {
+		map.clear();
+
+		if (!await fs.stat(file).then(stat => stat.isFile()).catch(() => false)) {
+			// Nothing to do, file doesn't exist
+			return;
+		}
 		const result = await fs.readFile(file);
 		const json = JSON.parse(new TextDecoder().decode(result));
-		return new Map<K, V>(json);
+		if (!Array.isArray(json)) {
+			throw new Error(`Invalid cache data in ${file}`);
+		}
+		for (const entry of json) {
+			if (!Array.isArray(entry) || entry.length !== 2) {
+				throw new Error(`Invalid cache data in ${file}`);
+			}
+			map.set(entry[0] as K, entry[1] as V);
+		}
 	}
 
-	const symbolMapFile = path.join(getCacheDirectory(), 'symbol_map.json');
-	symbolMap = await readJsonFile(symbolMapFile);
+	try {
+		const symbolMapFile = path.join(getCacheDirectory(), 'symbol_map.json');
+		await readJsonFile(symbolMapFile, symbolMap);
 
-	const fileMapFile = path.join(getCacheDirectory(), 'file_map.json');
-	fileMap = await readJsonFile(fileMapFile);
+		const fileMapFile = path.join(getCacheDirectory(), 'file_map.json');
+		await readJsonFile(fileMapFile, fileMap);
+	} catch (error) {
+		console.error(`Failed to read cache files: ${error}`);
+		symbolMap.clear();
+		fileMap.clear();
+	}
 }
 
 function defaultQCHPaths(): string[]
@@ -110,7 +108,7 @@ async function reindex(context: vscode.ExtensionContext): Promise<void> {
 	}, (progress, token) => new Promise((resolve, reject) => {
 		const worker = new Worker(new URL(vscode.Uri.joinPath(context.extensionUri, '/dist/worker.js').toString(true)));
 		let donePercent = 0;
-		worker.on("message", (message: Response) => {
+		worker.on("message", async (message: Response) => {
 			if (message.type === 'progress') {
 				const newProgressPercent = (message.progress.done / message.progress.total) * 100;
 				progress.report({ increment: newProgressPercent - donePercent });
@@ -121,7 +119,6 @@ async function reindex(context: vscode.ExtensionContext): Promise<void> {
 				reject(new Error(message.error));
 			}
 
-			symbolMap = undefined;
 		});
 		worker.on("error", (code) => {
 			console.error(`Worker error: ${code.message}`);
@@ -132,8 +129,32 @@ async function reindex(context: vscode.ExtensionContext): Promise<void> {
 	}));
 }
 
+function registerProviders(context: vscode.ExtensionContext): void {
+	// Register the main hook to provide documentation on hover
+	const provider = vscode.languages.registerHoverProvider('cpp', new HoverProvider(symbolMap, fileMap));
+	context.subscriptions.push(provider);
+}
+
+function registerCommands(context: vscode.ExtensionContext): void {
+	const command = vscode.commands.registerCommand('vscode-extension-qch.reindex', async () => {
+		await reindex(context);
+	});
+	context.subscriptions.push(command);
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	console.log("QCH extension activating");
+
+	// Register a hook to trigger reindexng when the configuration changes
+	vscode.workspace.onDidChangeConfiguration(async (event) => {
+		if (event.affectsConfiguration('vscode-extension-qch.qtDocPaths')) {
+			await reindex(context);
+			await initializeLookupMaps();
+		}
+	});
+
+	registerProviders(context);
+	registerCommands(context);
 
 	// Check whether we have any directories to scan, show a message to the user if not
 	const qchDirectories = getQCHDirectories(context);
@@ -152,124 +173,18 @@ export function activate(context: vscode.ExtensionContext) {
 				if (await checkIndex(context)) {
 					await reindex(context);
 				}
+				await initializeLookupMaps();
 			} catch (error) {
 				vscode.window.showErrorMessage(`Indexer failed with error: ${error}`);
 			}
 		})();
 	}
-
-	// Register a hook to trigger reindexng when the configuration changes
-	vscode.workspace.onDidChangeConfiguration((event) => {
-		if (event.affectsConfiguration('vscode-extension-qch.qtDocPaths')) {
-			reindex(context);
-		}
-	});
-
-	// Register the main hook to provide documentation on hover
-	vscode.languages.registerHoverProvider('cpp', {
-		async provideHover(document, position, cancellationToken): Promise<vscode.Hover> {
-
-			let hoverStart = performance.now();
-
-			if (!symbolMap || !fileMap) {
-				await initializeLookupMaps();
-				if (!symbolMap || !fileMap) {
-					return { contents: [] };
-				}
-			}
-
-			const editor = vscode.window.activeTextEditor;
-
-			const definitions = await vscode.commands.executeCommand<vscode.Definition | vscode.LocationLink[]>("vscode.executeDefinitionProvider", editor?.document.uri, position);
-			if (!definitions) {
-				return { contents: [] };
-			}
-
-			// Take the last definition, as those tend to be the correct ones if the provider somehow discovers
-			// a same-name definition in the current project.
-			const definition = (Array.isArray(definitions) ? definitions[definitions.length -1] : definitions) as vscode.Location;
-			const doc = await vscode.workspace.openTextDocument(definition.uri);
-			if (!doc.validateRange(definition.range)) {
-				return { contents: [] };
-			}
-
-			const rangeText = doc.getText(definition.range);
-			const sourceLine = doc.lineAt(definition.range.start.line).text;
-
-			const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>("vscode.executeDocumentSymbolProvider", doc.uri);
-			let start = performance.now();
-			const fqSymbol = resolveFQSymbol(symbols, rangeText);
-			console.log(`FQ symbol: ${fqSymbol?.name}, ${fqSymbol?.type}, took ${performance.now() - start} ms`);
-			if (!fqSymbol) {
-				return { contents: [] };
-			}
-
-			const symbolId = generateSymbolId(fqSymbol.name);
-			if (!symbolId) {
-				return { contents: [] };
-			}
-
-			const symbolData = symbolMap.get(symbolId);
-			if (!symbolData) {
-				console.debug(`No documentation for symbol ID ${symbolId} (symbol ${fqSymbol.name})`);
-				return { contents: [] };
-			}
-
-			const filePath = fileMap.get(symbolData.fileId);
-			if (!filePath) {
-				return { contents: [] };
-			}
-
-			const fd = await fs.open(filePath, 'r');
-			const stream = fd.createReadStream({
-				autoClose: true,
-				start: symbolData.anchor.offset,
-				end: symbolData.anchor.offset + symbolData.anchor.len
-			});
-
-			let dataPromise = new Promise<string>((resolve, reject) => {
-				let data = "";
-				stream.on('data', (chunk: string | Buffer) => {
-					if (chunk instanceof Buffer) {
-						data += chunk.toString('utf8');
-					} else {
-						data += chunk;
-					}
-				});
-				stream.on('end', () => {
-					resolve(data);
-				});
-				stream.on('error', (err) => {
-					reject(err);
-				});
-			});
-
-			const data = await dataPromise;
-			let md = NodeHtmlMarkdown.translate(data);
-			// Replace relative links with absolute link to online documentation
-			// FIXME: Ideally we would do this in the NodeHtmlMarkdown with a custom translator
-			md = md.replace(/([a-zA-Z0-9\-_]+\.html)/g, 'https://doc.qt.io/qt-6/$1');
-
-			console.log(`Documentation for symbol ${fqSymbol.name} resolved in ${performance.now() - hoverStart} ms`);
-
-			return {
-				contents: [md]
-			};
-		}
-	});
-
-	// Register commands
-	let disposable = vscode.commands.registerCommand('vscode-extension-qch.reindex', async () => {
-		await reindex(context);
-	});
-
-	context.subscriptions.push(disposable);
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {
 	console.log("QCH extension deactivating");
 
-	symbolMap = undefined;
-	fileMap = undefined;
+	symbolMap.clear();
+	fileMap.clear();
 }

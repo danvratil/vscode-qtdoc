@@ -7,6 +7,7 @@ import { inflate } from "zlib";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import os from 'os';
 import path from "path";
+import fs from 'fs/promises';
 
 const hostEndianness = (() => {
     const u16 = Uint16Array.of(1);
@@ -96,4 +97,39 @@ export function getCacheDirectory(): string
     })();
 
     return path.join(baseDir, 'vscode-qtdoc');
+}
+
+/**
+ * Reads a data from a file and returns it as a string.
+ *
+ * @param file Name of the file to read from
+ * @param startOffset Offset to start reading from (or undefined to read from the beginning)
+ * @param endOffset End offset to read to (or undefined to read until the end)
+ * @returns Contents of the file within the given range as a string.
+ */
+export async function readFilePart(file: string, startOffset: number | undefined = undefined, endOffset: number | undefined = undefined): Promise<string>
+{
+    const fd = await fs.open(file, 'r');
+    const stream = fd.createReadStream({
+        autoClose: true,
+        start: startOffset,
+        end: endOffset
+    });
+
+    return new Promise<string>((resolve, reject) => {
+        let data = "";
+        stream.on('data', (chunk: string | Buffer) => {
+            if (chunk instanceof Buffer) {
+                data += chunk.toString('utf8');
+            } else {
+                data += chunk;
+            }
+        });
+        stream.on('end', () => {
+            resolve(data);
+        });
+        stream.on('error', (err) => {
+            reject(err);
+        });
+    });
 }
