@@ -1,71 +1,73 @@
-# vscode-extension-qch README
+# VS Code Qt Documentation Extension
 
-This is the README for your extension "vscode-extension-qch". After writing up a brief description, we recommend including the following sections.
+This extension shows documentation for Qt methods and types when you hover over
+them.
 
-## Features
+![Demo](docs/demo.gif)
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+## Setup & Configuration
 
-For example if there is an image subfolder under your extension project workspace:
+After installing the extension, it may be necessary to configure paths to
+where the Qt documentation is installed on your system.
 
-\!\[feature X\]\(images/feature-x.png\)
+### Linux
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+The extension will automatically search for Qt documentation files (`.qch`)
+in `/usr/share/doc/qt5/` and `/usr/share/doc/qt6/`. Those paths (and files in
+them) are usually provided by distribution packages. If you have your Qt
+documentation installed in other location, you can specify the path in the
+extension settings.
 
-## Requirements
+### MacOS & Windows
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+On MacOS and Windows it is necessary to configure the paths to Qt documentation
+manually. After installation, the extension will inform you that there are no
+search paths configured and ask you to set them up.
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
 This extension contributes the following settings:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+* `vscode-extension-qch.qtDocsPaths`: Paths to search for QCH files.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+* Constructors don't show documentation (issue #1)
+* QML not supported (issue #2)
+* Documentation for overloaded methods is not resolved correctly (issue #3)
 
-## Release Notes
+## Contributing
 
-Users appreciate release notes as you update your extension.
+You are more than welcome to contribute to this project, be it code,
+documentation, localization or whatever else. Thank you!
 
-### 1.0.0
+To get started, simply fork our repository on GitHub, create a new branch
+for your changes, and submit a pull request when you're ready.
 
-Initial release of ...
+## FAQ
 
-### 1.0.1
+### Where to Get Qt Documentation?
 
-Fixed issue #.
+On Linux, it's usually available through distribution packages (usually called
+`qt6-doc` in most distros). Other way how to obtain the documentation, which
+applies to any platform is through the official
+[Qt Installer](https://www.qt.io/download-qt-installer-oss). Finally, it's
+also possible to build the Qt documentation yourself
+[directly from Qt sources](https://wiki.qt.io/Building_Qt_Documentation),
+either standalone or as part of compiling Qt yourself.
 
-### 1.1.0
+### Why a Special Extension for Qt?
 
-Added features X, Y, and Z.
+Unlike most C++ projects, Qt keeps its API documentation in the `.cpp` files.
+Therefore whe developing against Qt, the C++ Intellisense cannot see it, since
+it only has access to Qt header files.
 
----
+Qt instead compiles its documentation into a properietary QCH (Qt Compressed
+Help) format (which really is just an SQLite database). This extension extracts
+all documented symbols from the database and their documentation, so when you
+hover over a Qt type or it's method, the extension can quickly look up the
+documentation for it and provide it to VS Code.
 
-## Following extension guidelines
+## License
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+This project is published under the [MIT license](LICENSES/MIT.txt).
