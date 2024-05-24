@@ -1,15 +1,26 @@
 {
-  "name": "cz.dvratil.vscode-qtdoc",
+  "name": "vscode-qtdoc",
   "displayName": "Qt Documentation",
   "author": {
     "name": "Daniel Vrátil",
     "email": "me@dvratil.cz"
   },
-  "publisher": "cz.dvratil",
-  "description": "Display Qt documentation",
-  "version": "0.0.1",
+  "license": "MIT",
+  "icon": "docs/icon.png",
+  "publisher": "dvratil",
+  "description": "Display Qt documentation for types and functions in the editor",
+  "keywords": [ "qt", "documentation", "assistant", "qtdoc" ],
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.80.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danvratil/vscode-qtdoc"
+  },
+  "bugs": {
+    "url": "https://github.com/danvratil/vscode-qtdoc/issues",
+    "email": "me@dvratil.cz"
   },
   "categories": [
     "Other"
@@ -55,7 +66,7 @@
     "@types/mocha": "^10.0.6",
     "@types/node": "18.x",
     "@types/sql.js": "^1.4.9",
-    "@types/vscode": "^1.89.0",
+    "@types/vscode": "^1.80.0",
     "@typescript-eslint/eslint-plugin": "^7.7.1",
     "@typescript-eslint/parser": "^7.7.1",
     "@vscode/test-cli": "^0.0.9",
