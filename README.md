@@ -28,7 +28,7 @@ search paths configured and ask you to set them up.
 
 This extension contributes the following settings:
 
-* `vscode-extension-qch.qtDocsPaths`: Paths to search for QCH files.
+* `qtdoc.paths`: Paths to search for QCH files.
 
 ## Known Issues
 
