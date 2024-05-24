@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
-import fs from 'fs/promises';
 import { FileId, SymbolData, SymbolId, generateSymbolId } from './indexer';
 import { readFilePart } from './utils';
 import { NodeHtmlMarkdown } from 'node-html-markdown';

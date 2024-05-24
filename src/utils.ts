@@ -24,17 +24,17 @@ const hostEndianness = (() => {
 export function ntohl(data: Uint8Array): number
 {
     if (hostEndianness === 'BE') {
-        // BE->BE, this is much faster t han new Uint32Array(data.buffer)[0]
-        return ((0xff & data[3]) << 24) |
-            ((0xff & data[2]) << 16) |
-            ((0xff & data[1]) << 8) |
-            ((0xff & data[0]));
+        // BE->BE, this is much faster than new Uint32Array(data.buffer)[0]
+        return ((0xff & data[3] as number) << 24) |
+            ((0xff & data[2] as number) << 16) |
+            ((0xff & data[1] as number) << 8) |
+            ((0xff & data[0] as number));
     } else {
         // BE->LE
-        return ((0xff & data[0]) << 24) |
-            ((0xff & data[1]) << 16) |
-            ((0xff & data[2]) << 8) |
-            ((0xff & data[3]));
+        return ((0xff & data[0] as number) << 24) |
+            ((0xff & data[1] as number) << 16) |
+            ((0xff & data[2] as number) << 8) |
+            ((0xff & data[3] as number));
     }
 }
 
