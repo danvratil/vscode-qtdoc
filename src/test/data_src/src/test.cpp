@@ -7,7 +7,7 @@
 /*!
     \class TestClass
     \since 1.0
-    \inmodule Test
+    \inmodule Qt Test
 
     \brief This class is used for testing QCH parser.
 

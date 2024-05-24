@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-project                 = Test
-description             = Test Documentation
+project                 = Qt Test
+description             = Qt Test Documentation
 version                 = 1.0
 moduleheader            = TestDoc
 
@@ -12,16 +12,16 @@ sourcedirs              = src
 
 outputdir               = output
 
-qhp.projects            = Test
+qhp.projects            = QtTest
 
-qhp.Test.file           = test.qhp
-qhp.Test.namespace      = org.cz.dvratil.Test.1
-qhp.Test.virtualFolder       = testfolder
-qhp.Test.indexTitle          = Test Documentation
-qhp.Test.indexRoot           =
+qhp.QtTest.file           = test.qhp
+qhp.QtTest.namespace      = org.cz.dvratil.Test.1
+qhp.QtTest.virtualFolder       = testfolder
+qhp.QtTest.indexTitle          = Qt Test Documentation
+qhp.QtTest.indexRoot           =
 
-qhp.Test.subprojects         = classes
-qhp.Test.subprojects.classes.title = C++ Classes
-qhp.Test.subprojects.classes.indexTitle = Test C++ Classes
-qhp.Test.subprojects.classes.selectors = class fake:headerfile
-qhp.Test.subprojects.classes.sortPages = true
+qhp.QtTest.subprojects         = classes
+qhp.QtTest.subprojects.classes.title = C++ Classes
+qhp.QtTest.subprojects.classes.indexTitle = Qt Test C++ Classes
+qhp.QtTest.subprojects.classes.selectors = class fake:headerfile
+qhp.QtTest.subprojects.classes.sortPages = true

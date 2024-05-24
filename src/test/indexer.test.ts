@@ -18,8 +18,14 @@ suite("Indexer", async () => {
 
         await assert.doesNotReject(indexQCHFile(sqlite, path.join(__dirname, "../../src/test/data/test.qch"), symbolMap, fileMap));
 
-        assert.strictEqual(symbolMap.size, 4);
+        assert.strictEqual(symbolMap.size, 5);
         assert.strictEqual(fileMap.size, 1);
+
+        const testClassKey = string_hash("TestClass");
+        assert.ok(symbolMap.has(testClassKey));
+        const testClass = symbolMap.get(testClassKey)!;
+        assert.ok(testClass.anchor.offset > 0);
+        assert.ok(testClass.anchor.len > 0);
 
         const setTestPropertyKey = string_hash("TestClass::setTestProperty");
         assert.ok(symbolMap.has(setTestPropertyKey));
