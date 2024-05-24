@@ -9,8 +9,13 @@
   "icon": "docs/icon.png",
   "publisher": "dvratil",
   "description": "Display Qt documentation for types and functions in the editor",
-  "keywords": [ "qt", "documentation", "assistant", "qtdoc" ],
-  "version": "0.1.0",
+  "keywords": [
+    "qt",
+    "documentation",
+    "assistant",
+    "qtdoc"
+  ],
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.80.0"
   },
