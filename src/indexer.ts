@@ -174,7 +174,7 @@ async function extractAnchor(document: HTMLElement, anchor: string | undefined):
 
         return {
             offset: start,
-            len: Math.max(0, end - doc_header_elem.range[0])
+            len: Math.max(0, end - start)
         };
     } else {
         const descr_elem = document.querySelector("div.descr");
