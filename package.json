@@ -68,7 +68,7 @@
   },
   "devDependencies": {
     "@types/collections": "^5.1.5",
-    "@types/mocha": "^10.0.6",
+    "@types/mocha": "^10.0.7",
     "@types/node": "20.x",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.90.0",
