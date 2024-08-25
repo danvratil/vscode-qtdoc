@@ -7,6 +7,16 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 
 
+## 0.1.2 - 2024-08-25
+
+### Fixed
+
+- Fixed minified/production build not working due mangling of the initSqlJs function
+
+### Changed
+
+- Dependency updates
+
 ## 0.1.1 - 2024-05-24
 
 ### Fixed
