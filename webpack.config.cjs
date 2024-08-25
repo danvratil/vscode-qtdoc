@@ -7,6 +7,7 @@
 'use strict';
 
 const CopyPlugin = require('copy-webpack-plugin');
+const TerserPlugin = require("terser-webpack-plugin");
 const path = require('path');
 
 //@ts-check
@@ -63,6 +64,19 @@ const extensionConfig = {
         { from: 'node_modules/sql.js/dist/sql-wasm.wasm', to: 'sql-wasm.wasm' }
       ]
     })
-  ]
+  ],
+  optimization: {
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          mangle: {
+            // don't mangle the "initSqlJs" function, otherwise the whole thing breaks and calling
+            // it from our code fails with "(0, default.l) is not a function"
+            reserved: [ "initSqlJs" ]
+          }
+        }
+      })
+    ]
+  }
 };
 module.exports = [ extensionConfig ];
