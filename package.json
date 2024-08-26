@@ -90,7 +90,7 @@
     "collections": "^5.1.13",
     "node-html-markdown": "^1.3.0",
     "node-html-parser": "^6.1.13",
-    "sql.js": "^1.10.3",
+    "sql.js": "^1.11.0",
     "string-hash-64": "^1.0.3"
   }
 }
