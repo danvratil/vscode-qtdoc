@@ -1,0 +1,38 @@
+name: Release new version
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: 20.15
+
+      - name: Install dependencies
+        run: yarn install && yarn install -g @vscode/vsce
+
+      - name: Run tests
+        run: xvfb-run -a yarn test
+
+      - name: Publish to Visual Studio Marketplace
+        id: publishVsix
+        uses: HaaLeo/publish-vscode-extension@v1
+        with:
+          pat: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+          registryUrl: https://marketplace.visualstudio.com
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{steps.publishVsix.outputs.vsixPath}}
+          body_path: CHANGELOG.md
+
