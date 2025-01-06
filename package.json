@@ -70,7 +70,7 @@
     "@stylistic/eslint-plugin-ts": "^2.8.0",
     "@types/collections": "^5.1.5",
     "@types/mocha": "^10.0.9",
-    "@types/node": "20.15.0",
+    "@types/node": "22.10.5",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.94.0",
     "@vscode/test-cli": "^0.0.10",
