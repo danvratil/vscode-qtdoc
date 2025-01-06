@@ -67,28 +67,28 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@stylistic/eslint-plugin-ts": "^2.8.0",
+    "@stylistic/eslint-plugin-ts": "^2.12.1",
     "@types/collections": "^5.1.5",
-    "@types/mocha": "^10.0.9",
-    "@types/node": "20.15.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.10.5",
     "@types/sql.js": "^1.4.9",
-    "@types/vscode": "^1.94.0",
+    "@types/vscode": "^1.96.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.0",
     "copy-webpack-plugin": "^12.0.2",
-    "eslint": "^9.14.0",
-    "terser-webpack-plugin": "^5.3.10",
+    "eslint": "^9.17.0",
+    "terser-webpack-plugin": "^5.3.11",
     "ts-loader": "^9.5.1",
-    "typescript": "^5.6.3",
-    "typescript-eslint": "^8.13.0",
-    "webpack": "^5.96.1",
-    "webpack-cli": "^5.1.4"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.1",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^6.0.1"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
     "collections": "^5.1.13",
     "node-html-markdown": "^1.3.0",
-    "node-html-parser": "^6.1.13",
+    "node-html-parser": "^7.0.1",
     "sql.js": "^1.12.0",
     "string-hash-64": "^1.0.3"
   }
