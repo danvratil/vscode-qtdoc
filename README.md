@@ -59,7 +59,7 @@ either standalone or as part of compiling Qt yourself.
 ### Why a Special Extension for Qt?
 
 Unlike most C++ projects, Qt keeps its API documentation in the `.cpp` files.
-Therefore whe developing against Qt, the C++ Intellisense cannot see it, since
+Therefore when developing against Qt, the C++ Intellisense cannot see it, since
 it only has access to Qt header files.
 
 Qt instead compiles its documentation into a properietary QCH (Qt Compressed
