@@ -76,11 +76,11 @@
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
     "copy-webpack-plugin": "^13.0.0",
-    "eslint": "^9.25.1",
+    "eslint": "^9.26.0",
     "terser-webpack-plugin": "^5.3.14",
     "ts-loader": "^9.5.2",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.31.0",
+    "typescript-eslint": "^8.31.1",
     "webpack": "^5.99.7",
     "webpack-cli": "^6.0.1"
   },
